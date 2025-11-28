@@ -8,8 +8,13 @@ Example driver code that uses all modules to:
 2. Optionally, build the reachable set via the grid method with Poisson Disk thinning.
 3. Build the reachable set via the grid method (Torch backend) and measure acceleration.
 4. Build the boundary of the reachable set via Pyomo optimal control.
-5. Plot both reachable sets on one figure.
-6. Compute and visualize the Hausdorff distance between the two sets.
+5. Build an alternative boundary via a brute-force sweep of constant controls on the circle.
+6. Plot:
+   - reachable set (grid) vs OC boundary (Pyomo),
+   - OC boundary (Pyomo) vs OC boundary (bruteforce).
+7. Compute and visualize the Hausdorff distance:
+   - between grid reachable set and OC boundary (Pyomo),
+   - between OC boundary (Pyomo) and OC boundary (bruteforce).
 
 This script is intended to be run in a Jupyter/Colab environment. Adjust
 parameters (T, num_time_steps, etc.) if needed.
@@ -18,11 +23,12 @@ parameters (T, num_time_steps, etc.) if needed.
 import time
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from system import ControlledSystem, ControlledSystemTorch
 from controls import generate_controls_disk
 from grid_reachability import ReachabilityConfig, compute_reachable_set_grid
-from ocp_pyomo import compute_oc_boundary
+from ocp_pyomo import compute_oc_boundary, compute_oc_boundary_bruteforce
 from hausdorff import hausdorff_distance
 from plotting import plot_reachable_sets
 
@@ -84,7 +90,7 @@ def run_experiment():
             thinning_method="grid",
             thinning_param=thinning_h,
             backend="torch",
-            torch_device="cuda" if False else "cpu",  # set to "cuda" if GPU is available
+            torch_device="cuda",  # поставь "cpu", если GPU нет/не нужен
         )
 
         t0 = time.perf_counter()
@@ -99,7 +105,7 @@ def run_experiment():
         else:
             print("Torch time is too small to compute speedup reliably.")
 
-        # Use the NumPy grid-thinned result as canonical for comparison.
+        # Используем NumPy-результат как основной для сравнения с ОУ
         R_grid = R_grid_numpy
 
     except Exception as e:
@@ -108,29 +114,87 @@ def run_experiment():
 
     # 4. Boundary via optimal control (Pyomo)
     num_directions = 32
-    print("Solving optimal control problems for boundary (this may take some time)...")
+    print("Solving optimal control problems for boundary (Pyomo)...")
     R_oc = compute_oc_boundary(
         system=system,
         x0=x0,
         T=T,
         num_time_steps=num_time_steps,
         num_directions=num_directions,
-        solver_name="ipopt",   # make sure IPOPT is installed, or change to an available solver
+        solver_name="ipopt",   # make sure IPOPT is installed
     )
-    print(f"OC boundary computed with {R_oc.shape[0]} points.")
+    print(f"OC boundary (Pyomo) computed with {R_oc.shape[0]} points.")
 
-    # 5. Hausdorff distance (between grid-based reachable set and OC boundary)
-    hd = hausdorff_distance(R_grid, R_oc)
-    print(f"Hausdorff distance between grid (grid thinning) and OC sets: d_H = {hd.distance:.4f}")
+    # 4a. Boundary via brute-force sweep over constant controls on the circle
+    print("Computing OC boundary by brute-force over constant controls on the circle...")
 
-    # 6. Plot
+    # Directions the same as for Pyomo boundary
+    phis = np.linspace(0.0, 2.0 * np.pi, num_directions, endpoint=False)
+    # Candidate controls on the control circle (можно взять сетку погуще, чем для сеточного метода)
+    num_controls_bruteforce = 32
+    control_candidates = generate_controls_disk(
+        num_controls=num_controls_bruteforce,
+        u_max=u_max,
+        on_circle=True,
+    )
+
+    R_oc_bruteforce = compute_oc_boundary_bruteforce(
+        system=system,
+        x0=x0,
+        T=T,
+        num_time_steps=num_time_steps,
+        phis=phis,
+        control_candidates=control_candidates,
+    )
+    print(f"OC boundary (bruteforce) computed with {R_oc_bruteforce.shape[0]} points.")
+
+    # 5. Hausdorff distance: grid reachable set vs OC (Pyomo)
+    hd_grid_oc = hausdorff_distance(R_grid, R_oc)
+    print(f"Hausdorff distance between grid (grid thinning) and OC (Pyomo) sets: d_H = {hd_grid_oc.distance:.4f}")
+
+    # 5a. Hausdorff distance: OC (Pyomo) vs OC (bruteforce)
+    hd_oc_vs_bf = hausdorff_distance(R_oc, R_oc_bruteforce)
+    print(f"Hausdorff distance between OC (Pyomo) and OC (bruteforce) sets: d_H = {hd_oc_vs_bf.distance:.4f}")
+
+    # 6. Plot: grid reachable set vs OC (Pyomo)
     plot_reachable_sets(
         R_grid=R_grid,
         R_oc=R_oc,
-        hd=hd,
-        title="Reachable set (grid method) vs OC boundary",
-        save_path=None,  # or specify a filename
+        hd=hd_grid_oc,
+        title="Reachable set (grid method) vs OC boundary (Pyomo)",
+        save_path=None,
     )
+
+    # 6a. Plot: OC (Pyomo) vs OC (bruteforce) — отдельный график
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_aspect("equal", adjustable="box")
+
+    # Замыкаем ломаные для красоты
+    R_oc_closed = np.vstack([R_oc, R_oc[0]])
+    R_oc_bf_closed = np.vstack([R_oc_bruteforce, R_oc_bruteforce[0]])
+
+    ax.plot(R_oc_closed[:, 0], R_oc_closed[:, 1],
+            linewidth=2.0, label="OC boundary (Pyomo)")
+    ax.plot(R_oc_bf_closed[:, 0], R_oc_bf_closed[:, 1],
+            linestyle="--", marker="o", markersize=4,
+            label="OC boundary (bruteforce)")
+
+    # Пара точек Хаусдорфа Pyomo vs bruteforce
+    pa = hd_oc_vs_bf.point_a
+    pb = hd_oc_vs_bf.point_b
+    ax.scatter([pa[0]], [pa[1]], color="red", s=60, label="Hausdorff point A")
+    ax.scatter([pb[0]], [pb[1]], color="green", s=60, label="Hausdorff point B")
+    ax.plot([pa[0], pb[0]], [pa[1], pb[1]],
+            linestyle=":", color="black",
+            label=f"Hausdorff segment (d={hd_oc_vs_bf.distance:.3f})")
+
+    ax.set_xlabel("x1")
+    ax.set_ylabel("x2")
+    ax.set_title("OC boundary: Pyomo vs bruteforce constant controls")
+    ax.grid(True)
+    ax.legend(loc="best")
+
+    plt.show()
 
 
 if __name__ == "__main__":
