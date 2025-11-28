@@ -1,214 +1,281 @@
 # Reachable Sets for 2D Controlled Systems
 
-Исследовательский проект по построению множеств достижимости плоской управляемой системы разными методами и сравнению их по расстоянию Хаусдорфа.
+This repository contains a small numerical study of reachable sets for a two–dimensional controlled system. The project implements:
 
-Проект реализует:
+- a grid-based (point–cloud) method for reachable sets in Python,
+- Poisson disk and grid-based thinning of point clouds,
+- an accelerated implementation of the grid method using PyTorch (CPU / GPU),
+- construction of the reachable set boundary via optimal control problems in Pyomo,
+- computation and visualisation of the Hausdorff distance between two reachable-set approximations.
 
-1. Построение множества достижимости двумерной управляемой системы сеточным методом (метод «облака точек» с прореживанием).
-2. Ускорение сеточного метода с помощью PyTorch (CPU/GPU).
-3. Построение границы множества достижимости через задачи оптимального управления в Pyomo.
-4. Отображение двух множеств на одном графике.
-5. Вычисление расстояния по Хаусдорфу между двумя аппроксимациями и его визуализацию.
-
----
-
-## 1. Математическая постановка
-
-Рассматривается управляемая система:
-
-\[
-\dot x(t) = f(x(t), u(t)), \quad x(t) \in \mathbb{R}^2, \ u(t) \in P, \ t \in [0, T],
-\]
-
-с фиксированным начальным состоянием \(x(0) = x_0\).
-
-В данном демо-проекте динамика выбрана простой линейной:
-
-\[
-\begin{cases}
-\dot x_1 = x_2 + u_1, \\
-\dot x_2 = -x_1 + u_2,
-\end{cases}
-\]
-
-где \(u = (u_1, u_2)\) — двумерное управление с ограничением, например, в диске
-
-\[
-P = \{ u \in \mathbb{R}^2 : \|u\|_2 \le u_{\max} \}.
-\]
-
-Множество достижимости к моменту \(T\):
-
-\[
-\mathcal{R}(T) = \{ x(T) : \dot x = f(x,u), \ x(0)=x_0, \ u(\cdot) \in \mathcal{U} \}.
-\]
-
-В проекте строятся две численные аппроксимации:
-
-- \(\mathcal{R}_{\text{grid}}(T)\) — через сеточный (point-cloud) метод,
-- \(\mathcal{R}_{\text{OC}}(T)\) — через решения задач оптимального управления по направлениям.
+The code is designed to run both locally and in Google Colab.
 
 ---
 
-## 2. Возможности проекта (что реализовано)
+## Mathematical model
 
-### 2.1. Сеточный метод множества достижимости
+We consider a controlled system
+$$
+\dot x(t) = f(x(t), u(t)), \quad x(t) \in \mathbb{R}^2,\ u(t) \in P,\ t \in [0, T],
+$$
+with a fixed initial condition \(x(0) = x_0\).
 
-- Дискретизация времени: \(t_0=0 < t_1 < \dots < t_N=T\), шаг \(\Delta t = T/N\).
-- Дискретный набор управлений \( \{u_k\}_{k=1}^{M} \subset P\) (обычно равномерная сетка по углу на окружности/эллипсе).
-- Итерация по времени:
+In this project the dynamics are chosen as a simple linear system with additive control
+$$
+\begin{aligned}
+\dot x_1 &= x_2 + u_1, \\
+\dot x_2 &= -x_1 + u_2,
+\end{aligned}
+$$
+where \(u = (u_1, u_2)\) is a 2-dimensional control.
 
-  - На шаге \(i\) есть облако точек \(W_i\).
-  - Для каждой точки \(x \in W_i\) и каждого управления \(u_k\) вычисляется
-    \[
-    x^{\text{new}} = x + \Delta t \, f(x, u_k)
-    \]
-    (схема Эйлера).
-  - Все полученные точки собираются в облако \(\tilde W_{i+1}\).
-  - К \(\tilde W_{i+1}\) применяется процедура прореживания → получаем \(W_{i+1}\).
+The control set is a disk
+$$
+P = \{ u \in \mathbb{R}^2 : \lVert u \rVert_2 \le u_{\max} \}.
+$$
 
-- После \(N\) шагов \(W_N\) считается аппроксимацией \(\mathcal{R}_{\text{grid}}(T)\).
+The reachable set at time \(T\) is
+$$
+\mathcal{R}(T)
+=
+\{ x(T) : x(0) = x_0,\ \dot x = f(x,u),\ u(\cdot) \in \mathcal{U} \}.
+$$
 
-Реализовано два типа прореживания:
+In the code we build two numerical approximations:
 
-1. **Grid-based thinning** — сетка в \(\mathbb{R}^2\), один представитель на ячейку.
-2. **Poisson Disk thinning** — жадный алгоритм с минимальным расстоянием между точками (Poisson Disk Sampling-style).
-
-Для ускорения:
-
-- Базовая версия — NumPy (CPU).
-- Ускоренная версия — PyTorch (CPU/GPU), векторизованное вычисление всех переходов \((x,u)\).
-
-### 2.2. Граница множества через задачи оптимального управления (Pyomo)
-
-Для направления \(\ell(\phi) = (\cos\phi, \sin\phi)\) решается задача:
-
-\[
-\max_{u(\cdot)} \ \langle \ell(\phi), x(T) \rangle
-\]
-
-при ограничениях динамики и допустимых управлений.
-
-Численная постановка:
-
-- Дискретизация времени тем же шагом \(\Delta t\).
-- Переменные: \(x_k \in \mathbb{R}^2\), \(u_k \in \mathbb{R}^2\) для \(k=0,\dots,N-1\).
-- Ограничения динамики (Эйлер):
-
-  \[
-  x_{k+1} = x_k + \Delta t \, f(x_k, u_k).
-  \]
-
-- Ограничения на управление, например \(\|u_k\|_2 \le u_{\max}\).
-- Цель: максимизировать \(\langle \ell(\phi), x_N \rangle\) (реализовано как минимизация отрицательного значения).
-
-Повторяя это для набора углов \(\phi_j\) (равномерно по \([0,2\pi)\)), получаем граничные точки \(x_{\phi_j}(T)\), образующие \(\partial \mathcal{R}_{\text{OC}}(T)\).
-
-### 2.3. Расстояние по Хаусдорфу
-
-Для двух конечных множеств \(A, B \subset \mathbb{R}^2\):
-
-\[
-d_H(A,B) = \max\left\{\max_{a\in A}\min_{b\in B}\|a-b\|,\ \max_{b\in B}\min_{a\in A}\|b-a\|\right\}.
-\]
-
-Реализовано:
-
-- Вычисление направленных расстояний \(d(A,B)\) и \(d(B,A)\) (через cKDTree или brute force).
-- Поиск пары точек \((a^*, b^*)\), где достигается максимум (приближённо).
-- Возврат структуры `HausdorffResult` с:
-  - `distance`
-  - `point_a`
-  - `point_b`.
-
-Визуализация:
-
-- Облако точек сеточного метода.
-- Ломаная граница \(\mathcal{R}_{\text{OC}}(T)\).
-- Маркеры для \(a^*\) и \(b^*\), отрезок между ними и текст с численным значением расстояния.
+- \(\mathcal{R}_{\mathrm{grid}}(T)\) — via the grid (point–cloud) method,
+- \(\mathcal{R}_{\mathrm{OC}}(T)\) — via optimal control problems in given directions.
 
 ---
 
-## 3. Структура проекта
+## Implemented methods
 
-Основные модули:
+### Grid-based reachable set
+
+Time is discretised as
+\( 0 = t_0 < t_1 < \dots < t_N = T \)
+with step \(\Delta t = T / N\).
+The control set \(P\) is approximated by a finite subset
+\(\{u^k\}_{k=1}^M \subset P\) (points on a circle or ellipse).
+
+On each time step \(i\):
+
+1. At step \(i\) we have a cloud of points \(W_i\).
+2. For every \(x \in W_i\) and every control \(u^k\) we compute
+   $$
+   x^{\text{new}} = x + \Delta t\, f(x, u^k)
+   $$
+   using the explicit Euler scheme.
+3. All new points are collected into a cloud \(\widetilde W_{i+1}\).
+4. A thinning procedure is applied to \(\widetilde W_{i+1}\), producing \(W_{i+1}\).
+
+After \(N\) steps, \(W_N\) is taken as an approximation of \(\mathcal{R}_{\mathrm{grid}}(T)\).
+
+Two thinning strategies are implemented:
+
+- **Grid thinning** — a rectangular grid with step \(h\); at most one representative per grid cell.
+- **Poisson disk thinning** — a simple greedy algorithm that enforces a minimum distance \(r\) between any two kept points.
+
+The baseline implementation uses NumPy on CPU. An accelerated implementation uses PyTorch and can run on GPU; in the accelerated version both the propagation step and grid thinning are done in pure Torch.
+
+### Boundary via optimal control (Pyomo)
+
+For a direction
+\(\ell(\varphi) = (\cos \varphi, \sin \varphi)\)
+we solve the optimal control problem
+$$
+\max_{u(\cdot)} \ \langle \ell(\varphi), x(T) \rangle
+$$
+subject to the system dynamics and the control constraint \(\lVert u(t) \rVert_2 \le u_{\max}\).
+
+The problem is discretised with the same time grid. The decision variables are
+\(x_k \in \mathbb{R}^2\) and \(u_k \in \mathbb{R}^2\) for \(k = 0, \dots, N-1\).  
+The discrete dynamics are
+$$
+x_{k+1} = x_k + \Delta t\, f(x_k, u_k), \quad k = 0, \dots, N-1.
+$$
+
+For each direction angle \(\varphi\) we solve this problem in Pyomo and obtain one boundary point \(x_\varphi(T)\). A set of such points for uniformly spaced angles in \([0, 2\pi)\) forms the boundary approximation \(\mathcal{R}_{\mathrm{OC}}(T)\).
+
+In addition, a simpler brute-force variant is implemented: for each direction \(\varphi\) we consider only constant controls \(u(t) \equiv u\) with \(u\) taken from a discrete set on the control circle and choose the one that maximises \(\langle \ell(\varphi), x(T) \rangle\).
+
+### Hausdorff distance
+
+For two finite point clouds \(A, B \subset \mathbb{R}^2\) the (symmetric) Hausdorff distance is
+$$
+d_H(A,B)
+=
+\max\left\{
+\max_{a \in A} \min_{b \in B} \lVert a - b \rVert_2,\,
+\max_{b \in B} \min_{a \in A} \lVert b - a \rVert_2
+\right\}.
+$$
+
+The code computes:
+
+- the directed distances \(d(A,B)\) and \(d(B,A)\),
+- the Hausdorff distance \(d_H(A,B)\),
+- one pair of points \((a^\*, b^\*)\) where this distance is attained (approximately).
+
+Both reachable-set approximations are plotted on one figure, and the Hausdorff distance is visualised as a line segment between \(a^\*\) and \(b^\*\).
+
+---
+
+## Project structure
+
+Main modules:
 
 - `system.py`  
-  Описание управляемой системы:
-  - класс `ControlledSystem` (NumPy-динамика `f_numpy`);
-  - класс `ControlledSystemTorch` (PyTorch-динамика `f_torch`).
+  Definition of the controlled system:
+  - `ControlledSystem` with NumPy dynamics `f_numpy`,
+  - `ControlledSystemTorch` with Torch dynamics `f_torch`.
 
 - `controls.py`  
-  Генерация дискретных множеств управлений:
-  - `generate_controls_disk` — точки на окружности диска \(\|u\| \le u_{\max}\);
-  - `generate_controls_box` — сетка в прямоугольнике;
-  - `generate_controls_ellipse` — сетка по эллипсу.
+  Generation of discrete control sets:
+  - `generate_controls_disk` — points on a circle (disk boundary),
+  - `generate_controls_box` — grid in a rectangle,
+  - `generate_controls_ellipse` — grid on an ellipse.
 
 - `thinning.py`  
-  Прореживание облака точек:
-  - `thin_grid(points, h)` — сетка с шагом `h`, один представитель на ячейку;
-  - `thin_poisson(points, r)` — Poisson Disk-подобный greedy алгоритм с минимальным расстоянием `r`.
+  Point-cloud thinning:
+  - `thin_grid(points, h)` — grid-based thinning in NumPy,
+  - `thin_poisson(points, r)` — Poisson disk-like thinning in NumPy.
 
 - `backend_numpy.py`  
-  Базовый backend:
-  - `propagate_numpy(system, states, controls, dt)` — один шаг по времени для всех пар `(state, control)`.
+  Baseline propagation step:
+  - `propagate_numpy(system, states, controls, dt)`.
 
 - `backend_torch.py`  
-  Ускоренный backend на PyTorch:
-  - `propagate_torch(system, states, controls, dt, device)` — аналог `propagate_numpy`, но на тензорах (CPU/GPU).
+  Torch-based propagation and thinning:
+  - `propagate_torch_tensor(system, states_t, controls_t, dt)` — propagation on Torch,
+  - `thin_grid_torch(points_t, h)` — grid thinning on Torch,
+  - `propagate_torch_numpy(...)` — compatibility wrapper (NumPy → Torch → NumPy).
 
 - `grid_reachability.py`  
-  Высокоуровневый сеточный метод:
-  - `ReachabilityConfig` — параметры метода (T, шаги, тип прореживания, backend);
-  - `compute_reachable_set_grid(system, x0, controls, cfg)` — построение множества достижимости \(\mathcal{R}_{\text{grid}}(T)\).
+  High-level grid-based reachable-set computation:
+  - `ReachabilityConfig` — configuration (final time, number of steps, backend, thinning),
+  - `compute_reachable_set_grid(system, x0, controls, cfg)` — returns a point cloud at time \(T\),
+  - internally selects either NumPy or Torch implementation.
 
 - `ocp_pyomo.py`  
-  Задачи оптимального управления:
-  - `solve_ocp_direction(phi, system, x0, T, num_time_steps, solver_name)` — решение ОУ для одного направления;
-  - `compute_oc_boundary(system, x0, T, num_time_steps, num_directions, solver_name)` — граничный контур;
-  - `compute_oc_boundary_bruteforce(...)` — быстрый грубый вариант через постоянные управления и перебор по окружности/эллипсу.
+  Optimal control boundary computation:
+  - `solve_ocp_direction(phi, system, x0, T, num_time_steps, solver_name)` — one direction,
+  - `compute_oc_boundary(system, x0, T, num_time_steps, num_directions, solver_name)` — Pyomo boundary,
+  - `compute_oc_boundary_bruteforce(system, x0, T, num_time_steps, phis, control_candidates)` — brute-force variant with constant controls.
 
-- `hausdorff.py`
-  - `HausdorffResult` — результат вычисления расстояния;
-  - `hausdorff_distance(A, B)` — симметричное расстояние по Хаусдорфу и критическая пара точек.
+- `hausdorff.py`  
+  Hausdorff distance utilities:
+  - `HausdorffResult` — distance and the corresponding pair of points,
+  - `hausdorff_distance(A, B)` — symmetric Hausdorff distance between two clouds.
 
-- `plotting.py`
-  - `plot_reachable_sets(R_grid, R_oc, hd, title, save_path)` — единый график с множествами и отрезком Хаусдорфа.
+- `plotting.py`  
+  Plotting helper:
+  - `plot_reachable_sets(R_grid, R_oc, hd, title, save_path)` — one figure with both sets and the Hausdorff segment.
 
-- `experiment.py`
-  - `run_experiment()` — сценарий, который:
-    1. Строит сеточное множество достижимости (NumPy, grid thinning).
-    2. Строит вариант с Poisson-thinning (опционально).
-    3. Строит сеточное множество на Torch backend и измеряет ускорение.
-    4. Строит границу \(\mathcal{R}_{\text{OC}}(T)\) через Pyomo.
-    5. Считает расстояние по Хаусдорфу между \(\mathcal{R}_{\text{grid}}\) и \(\mathcal{R}_{\text{OC}}\).
-    6. Визуализирует всё на одном графике.
+- `experiment.py`  
+  Main script with experiments:
+  - `run_experiment()`:
+    - builds \(\mathcal{R}_{\mathrm{grid}}(T)\) with NumPy and Torch backends,
+    - computes the Pyomo-based boundary \(\mathcal{R}_{\mathrm{OC}}(T)\),
+    - computes a brute-force constant-control boundary,
+    - evaluates the Hausdorff distances,
+    - produces plots.
+  - `benchmark_reachability_speed()`:
+    - sweeps over `num_controls` and `num_time_steps`,
+    - measures runtime for NumPy vs Torch (GPU),
+    - prints speedup and cloud sizes.
 
 ---
 
-## 4. Установка и зависимости
+## Installation
 
-### 4.1. Базовые библиотеки
+The project targets Python 3.10+.
 
-Проект рассчитан на Python 3.10+.
-
-Минимальные зависимости:
+Required Python packages:
 
 - `numpy`
 - `matplotlib`
+- `pyomo`
+- `torch` (PyTorch)
+- `scipy` (optional, used for a KD-tree in the Hausdorff computation)
 
-Для ускорения и решателя:
-
-- `torch` (PyTorch) — для ускоренного backend’а;
-- `pyomo` — для задач оптимального управления;
-- внешний солвер (например, `ipopt`), который Pyomo будет вызывать.
-
-Опционально (для ускорения Хаусдорфа):
-
-- `scipy` (модуль `scipy.spatial.cKDTree`).
-
-Пример установки (локально):
+Install with:
 
 ```bash
 pip install numpy matplotlib pyomo torch scipy
-# далее установить и подключить внешнее решение типа IPOPT или другой доступный солвер
+```
+
+For the Pyomo optimal control problems you also need a nonlinear optimisation solver such as IPOPT. Installation depends on your environment. In Google Colab you can, for example, download prebuilt IPOPT binaries and add them to `PATH` (see the notebook for an example).
+
+---
+
+## Usage
+
+### Running locally
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/<your-username>/<your-repo>.git
+cd <your-repo>
+pip install -r requirements.txt  # if you decide to add one
+```
+
+Make sure a Pyomo-compatible solver (e.g. `ipopt`) is available on your `PATH`.
+
+Then run:
+
+```bash
+python experiment.py
+```
+
+The script will:
+
+* build the reachable set using the grid method (NumPy and Torch backends),
+* solve optimal control problems in multiple directions,
+* compute Hausdorff distances between the different approximations,
+* show two plots:
+
+  * grid reachable set vs Pyomo boundary,
+  * Pyomo boundary vs brute-force constant-control boundary.
+
+### Running in Google Colab
+
+A typical Colab workflow:
+
+1. Upload all `*.py` files to the working directory or unzip the project archive.
+
+2. Install dependencies:
+
+   ```python
+   !pip install numpy matplotlib pyomo torch scipy
+   # plus installation of IPOPT or another solver
+   ```
+
+3. Enable GPU in the Colab runtime (Runtime → Change runtime type → GPU).
+
+4. Import and run:
+
+   ```python
+   from experiment import run_experiment
+   run_experiment()
+   ```
+
+To run the speed benchmark:
+
+```python
+from experiment import benchmark_reachability_speed
+benchmark_reachability_speed()
+```
+
+This prints NumPy vs Torch timings and speedup for several parameter combinations.
+
+---
+
+## Notes on acceleration
+
+The Torch backend keeps the point cloud as a `torch.Tensor` on the selected device and performs both the propagation step and grid-based thinning on that device. This minimises CPU↔GPU data transfers and allows the method to benefit from GPU parallelism for sufficiently large configurations (number of controls, number of time steps, thinning step).
+
+The function `benchmark_reachability_speed()` can be used to explore parameter ranges where the Torch backend provides a significant speedup over the NumPy baseline.
+
+---
