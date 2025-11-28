@@ -47,8 +47,8 @@ def run_experiment():
     controls = generate_controls_disk(num_controls=num_controls, u_max=u_max, on_circle=True)
 
     # Thinning parameters
-    thinning_h = 0.05      # grid step for thinning
-    thinning_r = 0.05      # Poisson radius for thinning
+    thinning_h = 0.05  # grid step for thinning
+    thinning_r = 0.05  # Poisson radius for thinning
 
     # 2. Reachable set via grid method (NumPy backend, grid-based thinning)
     cfg_numpy_grid = ReachabilityConfig(
@@ -78,7 +78,8 @@ def run_experiment():
     R_grid_poisson = compute_reachable_set_grid(system, x0, controls, cfg_numpy_poisson)
     t1 = time.perf_counter()
     time_numpy_poisson = t1 - t0
-    print(f"[NumPy backend, Poisson thinning] Reachable set size: {R_grid_poisson.shape[0]}, time = {time_numpy_poisson:.3f} s")
+    print(
+        f"[NumPy backend, Poisson thinning] Reachable set size: {R_grid_poisson.shape[0]}, time = {time_numpy_poisson:.3f} s")
 
     # 3. Reachable set via grid method (Torch backend, CPU or CUDA)
     R_grid = R_grid_numpy
@@ -121,7 +122,7 @@ def run_experiment():
         T=T,
         num_time_steps=num_time_steps,
         num_directions=num_directions,
-        solver_name="ipopt",   # make sure IPOPT is installed
+        solver_name="ipopt",  # make sure IPOPT is installed
     )
     print(f"OC boundary (Pyomo) computed with {R_oc.shape[0]} points.")
 
@@ -195,6 +196,179 @@ def run_experiment():
     ax.legend(loc="best")
 
     plt.show()
+
+
+def benchmark_reachability_speed():
+    """
+    Benchmark for the grid-based reachability method using NumPy vs Torch backends.
+
+    It sweeps over different numbers of controls (num_controls) and time steps
+    (num_time_steps), measures runtime for each backend, and prints the speedup.
+
+    Run this in Colab with GPU enabled to find a configuration where Torch
+    (on cuda) is at least 2x faster than NumPy.
+    """
+    import time
+
+    x0 = np.array([0.0, 0.0], dtype=float)
+    T = 1.0
+    u_max = 1.0
+
+    system_np = ControlledSystem(u_max=u_max)
+    system_torch = ControlledSystemTorch(u_max=u_max)
+
+    # Наборы, по которым будем перебирать.
+    # Если будет мало нагрузки, можно увеличить.
+    num_controls_list = [16, 64, 128, 256]
+    num_time_steps_list = [40, 80, 160]
+
+    thinning_h = 0.03  # шаг для grid-thinning (фиксируем один)
+
+    print("Benchmark reachability (NumPy vs Torch on cuda)")
+    print("CUDA available:", __import__("torch").cuda.is_available())
+    print("-" * 80)
+
+    for num_controls in num_controls_list:
+        controls = generate_controls_disk(
+            num_controls=num_controls,
+            u_max=u_max,
+            on_circle=True,
+        )
+
+        for num_time_steps in num_time_steps_list:
+            # Конфиг для NumPy
+            cfg_numpy = ReachabilityConfig(
+                T=T,
+                num_time_steps=num_time_steps,
+                thinning_method="grid",
+                thinning_param=thinning_h,
+                backend="numpy",
+            )
+
+            # Конфиг для Torch (cuda)
+            cfg_torch = ReachabilityConfig(
+                T=T,
+                num_time_steps=num_time_steps,
+                thinning_method="grid",
+                thinning_param=thinning_h,
+                backend="torch",
+                torch_device="cuda",
+            )
+
+            # Прогрев Torch (маленький запуск, чтобы не считать его время)
+            _ = compute_reachable_set_grid(system_torch, x0, controls, cfg_torch)
+
+            # Замер NumPy
+            t0 = time.perf_counter()
+            R_np = compute_reachable_set_grid(system_np, x0, controls, cfg_numpy)
+            t1 = time.perf_counter()
+            t_numpy = t1 - t0
+
+            # Замер Torch
+            t0 = time.perf_counter()
+            R_torch = compute_reachable_set_grid(system_torch, x0, controls, cfg_torch)
+            t1 = time.perf_counter()
+            t_torch = t1 - t0
+
+            # На всякий случай проверим, что размеры сопоставимы
+            size_np = R_np.shape[0]
+            size_torch = R_torch.shape[0]
+
+            speedup = t_numpy / t_torch if t_torch > 0 else float("inf")
+            print(
+                f"num_controls={num_controls:3d}, "
+                f"num_time_steps={num_time_steps:3d} | "
+                f"NumPy={t_numpy:6.3f}s, Torch={t_torch:6.3f}s, "
+                f"speedup={speedup:4.2f}x, "
+                f"sizes: np={size_np}, torch={size_torch}"
+            )
+
+    print("-" * 80)
+    print("Pick any combination with speedup >= 2.0x and reuse those parameters")
+    print("in run_experiment() for the 'accelerated method' part of the report.")
+
+
+def benchmark_reachability_speed():
+    """
+    Benchmark for the grid-based reachability method using NumPy vs Torch backends.
+
+    It sweeps over different numbers of controls (num_controls) and time steps
+    (num_time_steps), measures runtime for each backend, and prints the speedup.
+
+    Run this in Colab with GPU enabled to find a configuration where Torch
+    (on cuda) is at least 2x faster than NumPy.
+    """
+    import time
+
+    x0 = np.array([0.0, 0.0], dtype=float)
+    T = 1.0
+    u_max = 1.0
+
+    system_np = ControlledSystem(u_max=u_max)
+    system_torch = ControlledSystemTorch(u_max=u_max)
+
+    # Чуть более тяжёлые параметры
+    num_controls_list = [32, 64, 128]
+    num_time_steps_list = [40, 80, 160]
+
+    thinning_h = 0.02  # поменьше шаг -> больше точек
+
+    print("Benchmark reachability (NumPy vs Torch on cuda)")
+    import torch as _torch
+    print("CUDA available:", _torch.cuda.is_available())
+    print("-" * 80)
+
+    for num_controls in num_controls_list:
+        controls = generate_controls_disk(
+            num_controls=num_controls,
+            u_max=u_max,
+            on_circle=True,
+        )
+
+        for num_time_steps in num_time_steps_list:
+            cfg_numpy = ReachabilityConfig(
+                T=T,
+                num_time_steps=num_time_steps,
+                thinning_method="grid",
+                thinning_param=thinning_h,
+                backend="numpy",
+            )
+
+            cfg_torch = ReachabilityConfig(
+                T=T,
+                num_time_steps=num_time_steps,
+                thinning_method="grid",
+                thinning_param=thinning_h,
+                backend="torch",
+                torch_device="cuda",
+            )
+
+            # Прогрев Torch
+            _ = compute_reachable_set_grid(system_torch, x0, controls, cfg_torch)
+
+            # NumPy
+            t0 = time.perf_counter()
+            R_np = compute_reachable_set_grid(system_np, x0, controls, cfg_numpy)
+            t1 = time.perf_counter()
+            t_numpy = t1 - t0
+
+            # Torch
+            t0 = time.perf_counter()
+            R_torch = compute_reachable_set_grid(system_torch, x0, controls, cfg_torch)
+            t1 = time.perf_counter()
+            t_torch = t1 - t0
+
+            size_np = R_np.shape[0]
+            size_torch = R_torch.shape[0]
+
+            speedup = t_numpy / t_torch if t_torch > 0 else float("inf")
+            print(
+                f"num_controls={num_controls:3d}, "
+                f"num_time_steps={num_time_steps:3d} | "
+                f"NumPy={t_numpy:6.3f}s, Torch={t_torch:6.3f}s, "
+                f"speedup={speedup:4.2f}x, "
+                f"sizes: np={size_np}, torch={size_torch}"
+            )
 
 
 if __name__ == "__main__":
