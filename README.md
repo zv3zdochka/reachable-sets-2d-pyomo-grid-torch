@@ -17,64 +17,48 @@ The code is structured so that it can be run both locally and in Google Colab (w
 
 ### 1.1 Linear system with disk control (convex reachable set)
 
-This is the “baseline” system used for most of the comparisons and the Pyomo boundary:
+This is the "baseline" system used for most of the comparisons and the Pyomo boundary:
 
-\[
-\dot x(t) = f(x(t), u(t)), \quad x(t) \in \mathbb{R}^2,\ u(t) \in P.
-\]
+$$\dot x(t) = f(x(t), u(t)), \quad x(t) \in \mathbb{R}^2,\ u(t) \in P.$$
 
 Dynamics:
 
-\[
-\begin{aligned}
+$$\begin{aligned}
 \dot x_1 &= x_2 + u_1,\\
 \dot x_2 &= -x_1 + u_2,
-\end{aligned}
-\]
+\end{aligned}$$
 
 with control set
 
-\[
-P = \{u \in \mathbb{R}^2 : \lVert u \rVert_2 \le u_{\max}\}.
-\]
+$$P = \{u \in \mathbb{R}^2 : \lVert u \rVert_2 \le u_{\max}\}.$$
 
 Initial condition:
 
-\[
-x(0) = x_0.
-\]
+$$x(0) = x_0.$$
 
-The reachable set at time \(T\) is
+The reachable set at time $T$ is
 
-\[
-\mathcal{R}(T)
-  = \{x(T) : x(0) = x_0,\ \dot x = f(x,u),\ u(\cdot) \in \mathcal{U}\}.
-\]
+$$\mathcal{R}(T)
+  = \{x(T) : x(0) = x_0,\ \dot x = f(x,u),\ u(\cdot) \in \mathcal{U}\}.$$
 
-Because the system is linear and the control set is convex, \(\mathcal{R}(T)\) is convex for any \(T > 0\).
+Because the system is linear and the control set is convex, $\mathcal{R}(T)$ is convex for any $T > 0$.
 
 ### 1.2 Li–Markus example (nonlinear in control, non-convex reachable set)
 
 The second model is the classical Li–Markus example, used here to demonstrate non-convex reachable sets:
 
-\[
-\begin{aligned}
+$$\begin{aligned}
 \dot x_1 &= x_2 u_1 - x_1 u_2,\\
 \dot x_2 &= -x_1 u_1 - x_2 u_2,
-\end{aligned}
-\]
+\end{aligned}$$
 
 with elliptic control set
 
-\[
-u_1^2 + 25 u_2^2 \le 1,
-\]
+$$u_1^2 + 25 u_2^2 \le 1,$$
 
 and initial condition
 
-\[
-x(0) = (1, 0).
-\]
+$$x(0) = (1, 0).$$
 
 For this system the reachable set in a fixed time interval is generally **non-convex**.  
 In the project, non-convexity is visualised and quantified via the Hausdorff distance between the reachable set and its convex hull.
@@ -85,31 +69,27 @@ In the project, non-convexity is visualised and quantified via the Hausdorff dis
 
 ### 2.1 Grid (point-cloud) reachable set
 
-Time is discretised into \(N\) steps:
+Time is discretised into $N$ steps:
 
-\[
-0 = t_0 < t_1 < \dots < t_N = T,\quad \Delta t = T/N.
-\]
+$$0 = t_0 < t_1 < \dots < t_N = T,\quad \Delta t = T/N.$$
 
-The control set \(P\) is approximated by a finite subset
-\(\{u^k\}_{k=1}^M \subset P\) (points on a circle or ellipse).
+The control set $P$ is approximated by a finite subset
+$\{u^k\}_{k=1}^M \subset P$ (points on a circle or ellipse).
 
-On each time step \(i\):
+On each time step $i$:
 
-1. The current point cloud is \(W_i\).
-2. For every \(x \in W_i\) and every discrete control \(u^k\), one step of the explicit Euler scheme is applied:
-   \[
-   x^{\text{new}} = x + \Delta t\, f(x, u^k).
-   \]
-3. All new points are collected into a temporary cloud \(\widetilde{W}_{i+1}\).
-4. A **thinning** procedure is applied to \(\widetilde{W}_{i+1}\), producing a reduced cloud \(W_{i+1}\).
+1. The current point cloud is $W_i$.
+2. For every $x \in W_i$ and every discrete control $u^k$, one step of the explicit Euler scheme is applied:
+   $$x^{\text{new}} = x + \Delta t\, f(x, u^k).$$
+3. All new points are collected into a temporary cloud $\widetilde{W}\_{i+1}$.
+4. A **thinning** procedure is applied to $\widetilde{W}\_{i+1}$, producing a reduced cloud $W\_{i+1}$.
 
-After \(N\) steps, \(W_N\) is taken as a numerical approximation of \(\mathcal{R}(T)\).
+After $N$ steps, $W\_N$ is taken as a numerical approximation of $\mathcal{R}(T)$.
 
 Two thinning strategies are implemented:
 
-- **Grid thinning** — a rectangular grid with step \(h\); at most one representative per grid cell.
-- **Poisson disk thinning** — a greedy algorithm enforcing a minimum pairwise distance \(r\) between retained points.
+- **Grid thinning** — a rectangular grid with step $h$; at most one representative per grid cell.
+- **Poisson disk thinning** — a greedy algorithm enforcing a minimum pairwise distance $r$ between retained points.
 
 The baseline implementation uses **NumPy** on CPU.  
 An accelerated backend uses **PyTorch** and can run both the propagation and grid thinning on GPU.
@@ -118,57 +98,49 @@ An accelerated backend uses **PyTorch** and can run both the propagation and gri
 
 For the linear system, the boundary of the reachable set is constructed in Pyomo by solving a family of optimal control problems along different directions.
 
-For each direction angle \(\varphi\) define
+For each direction angle $\varphi$ define
 
-\[
-\ell(\varphi) = (\cos\varphi,\ \sin\varphi).
-\]
+$$\ell(\varphi) = (\cos\varphi,\ \sin\varphi).$$
 
 The optimisation problem is
 
-\[
-\max_{u(\cdot)}\ \langle \ell(\varphi), x(T) \rangle
-\]
+$$\max_{u(\cdot)}\ \langle \ell(\varphi), x(T) \rangle$$
 
 subject to
 
-- dynamics \(\dot x = f(x,u)\),
-- control constraint \(\lVert u(t)\rVert_2 \le u_{\max}\),
-- initial condition \(x(0) = x_0\).
+- dynamics $\dot x = f(x,u)$,
+- control constraint $\lVert u(t)\rVert_2 \le u_{\max}$,
+- initial condition $x(0) = x_0$.
 
 The problem is discretised on the same time grid as the grid method:
 
-- decision variables: \(x_k \in \mathbb{R}^2\), \(u_k \in \mathbb{R}^2\) for \(k = 0,\dots,N-1\);
+- decision variables: $x_k \in \mathbb{R}^2$, $u_k \in \mathbb{R}^2$ for $k = 0,\dots,N-1$;
 - dynamics:
-  \[
-  x_{k+1} = x_k + \Delta t\, f(x_k, u_k).
-  \]
+  $$x_{k+1} = x_k + \Delta t\, f(x_k, u_k).$$
 
-For each \(\varphi\) one optimal final point \(x_\varphi(T)\) is obtained; the set \(\{x_\varphi(T)\}\) over a uniform grid of angles approximates the boundary of the reachable set.  
-This is exactly **method 1** in the supervisor’s description: “through a circle/ellipse and a cycle of optimal control problems with linear functionals”.
+For each $\varphi$ one optimal final point $x_\varphi(T)$ is obtained; the set $\{x_\varphi(T)\}$ over a uniform grid of angles approximates the boundary of the reachable set.  
+This is exactly **method 1** in the supervisor's description: "through a circle/ellipse and a cycle of optimal control problems with linear functionals".
 
 For the Li–Markus example this method would approximate the **convex hull** of the reachable set (wells/non-convex parts are not seen by support functionals), therefore non-convexity is analysed using the grid method instead.
 
-A simpler Pyomo-free variant is also implemented: “brute force constant controls”. For each direction \(\varphi\), a finite set of constant controls \(u(t)\equiv u\) on a circle/ellipse is tried; the best end point in the direction \(\ell(\varphi)\) is chosen.
+A simpler Pyomo-free variant is also implemented: "brute force constant controls". For each direction $\varphi$, a finite set of constant controls $u(t)\equiv u$ on a circle/ellipse is tried; the best end point in the direction $\ell(\varphi)$ is chosen.
 
 ### 2.3 Hausdorff distance and convexity analysis
 
-For two finite point clouds \(A, B \subset \mathbb{R}^2\) the symmetric Hausdorff distance is
+For two finite point clouds $A, B \subset \mathbb{R}^2$ the symmetric Hausdorff distance is
 
-\[
-d_H(A,B)
-= \max\Bigl\{
+$d_H(A,B)
+= \max\left\\{
 \max_{a\in A}\min_{b\in B}\lVert a-b\rVert_2,\,
 \max_{b\in B}\min_{a\in A}\lVert b-a\rVert_2
-\Bigr\}.
-\]
+\right\\}.$
 
 The code computes:
 
 - the Hausdorff distance between the grid reachable set and the Pyomo boundary;
 - for the Li–Markus example: the Hausdorff distance between the grid reachable set and its **convex hull** (via `scipy.spatial.ConvexHull`).
 
-The distance to the convex hull is used as a **numerical measure of non-convexity**; a qualitative status (“numerically non-convex” vs “approximately convex”) is printed for each time horizon \(T\).
+The distance to the convex hull is used as a **numerical measure of non-convexity**; a qualitative status ("numerically non-convex" vs "approximately convex") is printed for each time horizon $T$.
 
 ---
 
@@ -197,9 +169,9 @@ All files are in the project root.
 - **`thinning.py`**
 
   - `thin_grid(points, h)`  
-    NumPy implementation of grid-based thinning: at most one point per grid cell of size \(h\).
+    NumPy implementation of grid-based thinning: at most one point per grid cell of size $h$.
   - `thin_poisson(points, r)`  
-    Simple Poisson disk-like thinning: greedy selection of points at distance at least \(r\) from each other.
+    Simple Poisson disk-like thinning: greedy selection of points at distance at least $r$ from each other.
 
 - **`backend_numpy.py`**
 
@@ -232,14 +204,14 @@ All files are in the project root.
     - iterates over time steps,
     - calls the chosen backend,
     - applies thinning on each step,
-    - returns the final point cloud at time \(T\).
+    - returns the final point cloud at time $T$.
 
 ### 3.4 Pyomo optimal control
 
 - **`ocp_pyomo.py`**
 
   - `solve_ocp_direction(phi, system, x0, T, num_time_steps, solver_name)`  
-    Builds and solves one optimal control problem in direction \(\ell(\varphi)\) for the linear system.
+    Builds and solves one optimal control problem in direction $\ell(\varphi)$ for the linear system.
   - `compute_oc_boundary(system, x0, T, num_time_steps, num_directions, solver_name)`  
     Runs a loop over directions and collects the optimal end points into a boundary point set.
   - `compute_oc_boundary_bruteforce(system, x0, T, num_time_steps, phis, control_candidates)`  
@@ -278,7 +250,7 @@ For the Li–Markus system a small class `LiMarkusSystem` with `f_numpy` is defi
     - grid reachable set (NumPy, grid thinning),
     - Poisson thinning (for comparison of densities),
     - grid reachable set (Torch, grid thinning) with timing and speedup measurement,
-    - Pyomo boundary via optimal control in directions \(\ell(\varphi)\),
+    - Pyomo boundary via optimal control in directions $\ell(\varphi)$,
     - boundary via brute-force constant controls,
     - Hausdorff distance:
       - between grid set and Pyomo boundary,
@@ -287,10 +259,10 @@ For the Li–Markus system a small class `LiMarkusSystem` with `f_numpy` is defi
 
   - `run_li_markus_example()`  
     Li–Markus example:
-    - for several time horizons \(T\) builds the grid reachable set (NumPy backend),
+    - for several time horizons $T$ builds the grid reachable set (NumPy backend),
     - builds an approximate boundary via brute-force constant controls on the elliptic control set,
     - computes the convex hull of the reachable set and the Hausdorff distance to it,
-    - prints a qualitative convexity status (“degenerate”, “numerically non-convex”, “approximately convex”),
+    - prints a qualitative convexity status ("degenerate", "numerically non-convex", "approximately convex"),
     - draws figures with:
       - grid reachable set,
       - boundary,
@@ -324,7 +296,7 @@ Install via:
 
 ```bash
 pip install numpy matplotlib pyomo torch scipy
-````
+```
 
 For the Pyomo optimal control problems a nonlinear solver is required, e.g. **IPOPT**.
 In Google Colab, prebuilt IPOPT binaries can be downloaded and added to `PATH`; the example notebook typically uses commands like:
@@ -362,7 +334,7 @@ python experiment.py
 The script will:
 
 1. Run the **linear system experiment**, printing timing and Hausdorff distances and showing two plots (grid vs Pyomo, Pyomo vs brute force).
-2. Run the **Li–Markus experiment**, printing the size of the reachable set, status of convexity and displaying a series of plots for different (T).
+2. Run the **Li–Markus experiment**, printing the size of the reachable set, status of convexity and displaying a series of plots for different $T$.
 
 ### 4.3 Running in Google Colab
 
@@ -408,4 +380,34 @@ The repository is intended as a compact but complete implementation of the assig
 * quantify the discrepancy between various approximations via the **Hausdorff distance** and visualise it directly on the plots.
 
 This structure can be reused for other planar controlled systems by replacing the dynamics and the control-set generators.
+
+---
+
+## 6. Example results
+
+### 6.1 Li–Markus non-convex reachable set at T = 0.60
+
+![Li-Markus reachable set, T=0.60](docs/li_markus_t060.png)
+
+At the early time horizon $T = 0.60$, the Li–Markus system exhibits a **clearly non-convex reachable set**. The figure shows:
+
+- **Grid reachable set** (blue points) — computed via the grid method with NumPy backend
+- **Boundary** (orange curve) — constructed using constant controls on the elliptic control set
+- **Convex hull** (black dashed line) — the convex envelope of the reachable set
+- **Hausdorff segment** (dotted line) — connects the two points realizing the Hausdorff distance between the reachable set and its convex hull
+
+The Hausdorff distance of **0.175** quantifies the deviation from convexity. The reachable set has a characteristic narrow "finger" shape, demonstrating that the system's nonlinearity in control produces geometric structures that cannot be captured by convex combinations alone.
+
+### 6.2 Li–Markus reachable set at T = 2.00
+
+![Li-Markus reachable set, T=2.00](docs/li_markus_t200.png)
+
+At the longer time horizon $T = 2.00$, the reachable set grows significantly and maintains its **non-convex character**, now with a more complex crescent or "moon" shape. Key observations:
+
+- The reachable set (blue region) has a large interior region that is **not reachable**, creating a pronounced non-convex cavity
+- The **convex hull** (black dashed boundary) significantly overestimates the actual reachable set
+- The Hausdorff distance increases to **0.759**, indicating stronger non-convexity as time evolves
+- The boundary (orange) closely follows the edge of the grid set, validating both methods
+
+This example illustrates why optimal control methods based on support functions (which would only recover the convex hull) are insufficient for non-convex reachability analysis, and highlights the necessity of grid-based or level-set approaches for such systems.
 
