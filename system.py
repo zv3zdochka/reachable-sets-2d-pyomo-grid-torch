@@ -51,6 +51,7 @@ class ControlledSystem:
 try:
     import torch
 
+
     class ControlledSystemTorch(ControlledSystem):
         """
         Torch variant of the system. Shares the same dynamics, but implemented

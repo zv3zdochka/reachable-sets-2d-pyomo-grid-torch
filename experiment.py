@@ -77,8 +77,8 @@ def run_linear_example():
     controls = generate_controls_disk(num_controls=num_controls, u_max=u_max, on_circle=True)
 
     # Thinning parameters
-    thinning_h = 0.05      # grid step for thinning
-    thinning_r = 0.05      # Poisson radius for thinning
+    thinning_h = 0.05  # grid step for thinning
+    thinning_r = 0.05  # Poisson radius for thinning
 
     # --- 1) Reachable set via grid method (NumPy backend, grid-based thinning)
     cfg_numpy_grid = ReachabilityConfig(
@@ -151,7 +151,7 @@ def run_linear_example():
         T=T,
         num_time_steps=num_time_steps,
         num_directions=num_directions,
-        solver_name="ipopt",   # make sure IPOPT is installed
+        solver_name="ipopt",  # make sure IPOPT is installed
     )
     print(f"[Linear] OC boundary (Pyomo) computed with {R_oc_pyomo.shape[0]} points.")
 
@@ -313,7 +313,7 @@ def run_li_markus_example():
     # Values of T to investigate
     T_list = [0.2, 0.4, 0.6, 0.8, 1.2, 2.0]
     num_time_steps_li = 80
-    thinning_h_li = 0.01      # slightly less aggressive thinning
+    thinning_h_li = 0.01  # slightly less aggressive thinning
     num_directions_li = 64
 
     for T in T_list:
@@ -472,7 +472,6 @@ def run_li_markus_example():
 
         fig.tight_layout()
         plt.show()
-
 
 
 # ---------------------------------------------------------------------

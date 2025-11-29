@@ -14,6 +14,7 @@ import numpy as np
 
 try:
     from scipy.spatial import cKDTree
+
     HAS_KDTREE = True
 except ImportError:
     HAS_KDTREE = False
@@ -30,8 +31,8 @@ class HausdorffResult:
 
 
 def _directed_hausdorff(
-    A: np.ndarray,
-    B: np.ndarray,
+        A: np.ndarray,
+        B: np.ndarray,
 ) -> Tuple[float, int, int]:
     """
     Compute directed Hausdorff distance from A to B, and argmax indices.
@@ -59,10 +60,10 @@ def _directed_hausdorff(
         return d_max, idx_a_max, idx_b_near
     else:
         # Fallback: brute force via broadcasting
-        diff = A[:, None, :] - B[None, :, :]   # (Na, Nb, 2)
+        diff = A[:, None, :] - B[None, :, :]  # (Na, Nb, 2)
         dists = np.linalg.norm(diff, axis=-1)  # (Na, Nb)
-        min_dists = dists.min(axis=1)          # (Na,)
-        idx_near = dists.argmin(axis=1)        # (Na,)
+        min_dists = dists.min(axis=1)  # (Na,)
+        idx_near = dists.argmin(axis=1)  # (Na,)
         idx_a_max = int(np.argmax(min_dists))
         d_max = float(min_dists[idx_a_max])
         idx_b_near = int(idx_near[idx_a_max])

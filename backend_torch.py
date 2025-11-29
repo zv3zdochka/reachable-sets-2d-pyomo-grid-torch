@@ -31,11 +31,11 @@ from system import ControlledSystemTorch
 # === Старый NumPy-совместимый вариант (оставляем про запас) ===
 
 def propagate_torch_numpy(
-    system: ControlledSystemTorch,
-    states: np.ndarray,
-    controls: np.ndarray,
-    dt: float,
-    device: Literal["cpu", "cuda"] = "cpu",
+        system: ControlledSystemTorch,
+        states: np.ndarray,
+        controls: np.ndarray,
+        dt: float,
+        device: Literal["cpu", "cuda"] = "cpu",
 ) -> np.ndarray:
     """
     Backward-compatible wrapper: NumPy -> Torch -> NumPy.
@@ -47,13 +47,13 @@ def propagate_torch_numpy(
     if states.size == 0:
         return states
 
-    x = torch.from_numpy(states).to(device=device, dtype=torch.float32)   # (N, 2)
-    u = torch.from_numpy(controls).to(device=device, dtype=torch.float32) # (M, 2)
+    x = torch.from_numpy(states).to(device=device, dtype=torch.float32)  # (N, 2)
+    u = torch.from_numpy(controls).to(device=device, dtype=torch.float32)  # (M, 2)
 
-    X = x[:, None, :]      # (N, 1, 2)
-    U = u[None, :, :]      # (1, M, 2)
+    X = x[:, None, :]  # (N, 1, 2)
+    U = u[None, :, :]  # (1, M, 2)
     dX = system.f_torch(X, U)  # (N, M, 2)
-    X_new = X + dt * dX    # (N, M, 2)
+    X_new = X + dt * dX  # (N, M, 2)
 
     X_new_flat = X_new.reshape(-1, 2).detach().cpu().numpy()
     return X_new_flat
@@ -62,10 +62,10 @@ def propagate_torch_numpy(
 # === Новый тензорный вариант для быстрого backend'а ===
 
 def propagate_torch_tensor(
-    system: ControlledSystemTorch,
-    states_t: "torch.Tensor",
-    controls_t: "torch.Tensor",
-    dt: float,
+        system: ControlledSystemTorch,
+        states_t: "torch.Tensor",
+        controls_t: "torch.Tensor",
+        dt: float,
 ) -> "torch.Tensor":
     """
     Core propagation step on torch.Tensor.
@@ -89,16 +89,16 @@ def propagate_torch_tensor(
     if states_t.numel() == 0:
         return states_t
 
-    X = states_t[:, None, :]     # (N, 1, 2)
-    U = controls_t[None, :, :]   # (1, M, 2)
-    dX = system.f_torch(X, U)    # (N, M, 2)
-    X_new = X + dt * dX          # (N, M, 2)
+    X = states_t[:, None, :]  # (N, 1, 2)
+    U = controls_t[None, :, :]  # (1, M, 2)
+    dX = system.f_torch(X, U)  # (N, M, 2)
+    X_new = X + dt * dX  # (N, M, 2)
     return X_new.reshape(-1, 2)  # (N*M, 2)
 
 
 def thin_grid_torch(
-    points_t: "torch.Tensor",
-    h: float,
+        points_t: "torch.Tensor",
+        h: float,
 ) -> "torch.Tensor":
     """
     Grid-based thinning in pure Torch.
@@ -132,7 +132,7 @@ def thin_grid_torch(
     unique_cells, inverse = torch.unique(cell_idx, dim=0, return_inverse=True)
 
     # Сортируем точки по cell-id
-    sorted_inv, order = torch.sort(inverse)      # sorted_inv: (N,), order: (N,)
+    sorted_inv, order = torch.sort(inverse)  # sorted_inv: (N,), order: (N,)
     # Помечаем первые точки каждого нового cell-id
     new_cell = torch.ones_like(sorted_inv, dtype=torch.bool)
     new_cell[1:] = sorted_inv[1:] != sorted_inv[:-1]

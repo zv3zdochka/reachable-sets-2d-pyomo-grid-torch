@@ -16,11 +16,11 @@ from hausdorff import HausdorffResult
 
 
 def plot_reachable_sets(
-    R_grid: np.ndarray,
-    R_oc: np.ndarray,
-    hd: HausdorffResult,
-    title: str = "Reachable sets and Hausdorff distance",
-    save_path: Optional[str] = None,
+        R_grid: np.ndarray,
+        R_oc: np.ndarray,
+        hd: HausdorffResult,
+        title: str = "Reachable sets and Hausdorff distance",
+        save_path: Optional[str] = None,
 ) -> None:
     """
     Plot the grid-based reachable set and the OC-based boundary together, and

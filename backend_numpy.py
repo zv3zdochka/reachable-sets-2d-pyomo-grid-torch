@@ -13,10 +13,10 @@ from system import ControlledSystem
 
 
 def propagate_numpy(
-    system: ControlledSystem,
-    states: np.ndarray,
-    controls: np.ndarray,
-    dt: float,
+        system: ControlledSystem,
+        states: np.ndarray,
+        controls: np.ndarray,
+        dt: float,
 ) -> np.ndarray:
     """
     Propagate the set of states one time step forward for all controls.
@@ -41,8 +41,8 @@ def propagate_numpy(
         return states
 
     # Broadcast states and controls: (N, 1, 2) and (1, M, 2) -> (N, M, 2)
-    X = states[:, np.newaxis, :]          # (N, 1, 2)
-    U = controls[np.newaxis, :, :]        # (1, M, 2)
-    dX = system.f_numpy(X, U)             # (N, M, 2)
-    X_new = X + dt * dX                   # (N, M, 2)
+    X = states[:, np.newaxis, :]  # (N, 1, 2)
+    U = controls[np.newaxis, :, :]  # (1, M, 2)
+    dX = system.f_numpy(X, U)  # (N, M, 2)
+    X_new = X + dt * dX  # (N, M, 2)
     return X_new.reshape(-1, 2)

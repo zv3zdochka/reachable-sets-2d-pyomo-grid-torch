@@ -29,12 +29,12 @@ from system import ControlledSystem
 
 
 def solve_ocp_direction(
-    phi: float,
-    system: ControlledSystem,
-    x0: np.ndarray,
-    T: float,
-    num_time_steps: int,
-    solver_name: str = "ipopt",
+        phi: float,
+        system: ControlledSystem,
+        x0: np.ndarray,
+        T: float,
+        num_time_steps: int,
+        solver_name: str = "ipopt",
 ) -> np.ndarray:
     """
     Solve the optimal control problem for a single direction l(phi).
@@ -63,8 +63,8 @@ def solve_ocp_direction(
     N = num_time_steps
 
     model = pyo.ConcreteModel()
-    model.K = pyo.RangeSet(0, N)          # time steps for state
-    model.Kc = pyo.RangeSet(0, N - 1)     # time steps for control
+    model.K = pyo.RangeSet(0, N)  # time steps for state
+    model.Kc = pyo.RangeSet(0, N - 1)  # time steps for control
 
     # State variables
     model.x1 = pyo.Var(model.K, domain=pyo.Reals)
@@ -114,12 +114,12 @@ def solve_ocp_direction(
 
 
 def compute_oc_boundary(
-    system: ControlledSystem,
-    x0: np.ndarray,
-    T: float,
-    num_time_steps: int,
-    num_directions: int,
-    solver_name: str = "ipopt",
+        system: ControlledSystem,
+        x0: np.ndarray,
+        T: float,
+        num_time_steps: int,
+        num_directions: int,
+        solver_name: str = "ipopt",
 ) -> np.ndarray:
     """
     Compute the reachable set boundary by solving OCPs in multiple directions.
@@ -153,12 +153,12 @@ def compute_oc_boundary(
 
 
 def compute_oc_boundary_bruteforce(
-    system: ControlledSystem,
-    x0: np.ndarray,
-    T: float,
-    num_time_steps: int,
-    phis: np.ndarray,
-    control_candidates: np.ndarray,
+        system: ControlledSystem,
+        x0: np.ndarray,
+        T: float,
+        num_time_steps: int,
+        phis: np.ndarray,
+        control_candidates: np.ndarray,
 ) -> np.ndarray:
     """
     Auxiliary fast method: for each direction phi, consider only constant

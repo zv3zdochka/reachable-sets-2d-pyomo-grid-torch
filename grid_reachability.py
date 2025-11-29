@@ -22,10 +22,10 @@ try:
         propagate_torch_tensor,
         thin_grid_torch,
     )
+
     HAS_TORCH_BACKEND = True
 except ImportError:
     HAS_TORCH_BACKEND = False
-
 
 ThinningMethod = Literal["grid", "poisson"]
 BackendType = Literal["numpy", "torch"]
@@ -39,16 +39,16 @@ class ReachabilityConfig:
     T: float
     num_time_steps: int
     thinning_method: ThinningMethod = "grid"
-    thinning_param: float = 0.1   # h for grid, r for Poisson
+    thinning_param: float = 0.1  # h for grid, r for Poisson
     backend: BackendType = "numpy"
     torch_device: Literal["cpu", "cuda"] = "cpu"
 
 
 def _reachable_set_numpy(
-    system: ControlledSystem,
-    x0: np.ndarray,
-    controls: np.ndarray,
-    cfg: ReachabilityConfig,
+        system: ControlledSystem,
+        x0: np.ndarray,
+        controls: np.ndarray,
+        cfg: ReachabilityConfig,
 ) -> np.ndarray:
     """
     Internal helper: pure NumPy implementation (baseline).
@@ -70,10 +70,10 @@ def _reachable_set_numpy(
 
 
 def _reachable_set_torch(
-    system: ControlledSystem,
-    x0: np.ndarray,
-    controls: np.ndarray,
-    cfg: ReachabilityConfig,
+        system: ControlledSystem,
+        x0: np.ndarray,
+        controls: np.ndarray,
+        cfg: ReachabilityConfig,
 ) -> np.ndarray:
     """
     Internal helper: accelerated implementation on Torch.
@@ -118,10 +118,10 @@ def _reachable_set_torch(
 
 
 def compute_reachable_set_grid(
-    system: ControlledSystem,
-    x0: np.ndarray,
-    controls: np.ndarray,
-    cfg: ReachabilityConfig,
+        system: ControlledSystem,
+        x0: np.ndarray,
+        controls: np.ndarray,
+        cfg: ReachabilityConfig,
 ) -> np.ndarray:
     """
     Compute the reachable set at time T via the grid/point-cloud method.
