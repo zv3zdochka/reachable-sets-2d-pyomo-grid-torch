@@ -1,229 +1,359 @@
-# Reachable Sets for 2D Controlled Systems
+# Reachable Sets of 2D Controlled Systems (Grid vs Optimal Control, PyTorch Acceleration)
 
-This repository contains a small numerical study of reachable sets for a two–dimensional controlled system. The project implements:
+This repository contains numerical experiments with reachable sets of two–dimensional controlled systems.  
+The main goals are:
 
-- a grid-based (point–cloud) method for reachable sets in Python,
-- Poisson disk and grid-based thinning of point clouds,
-- an accelerated implementation of the grid method using PyTorch (CPU / GPU),
-- construction of the reachable set boundary via optimal control problems in Pyomo,
-- computation and visualisation of the Hausdorff distance between two reachable-set approximations.
+1. Build the reachable set of a planar controlled system by a **grid (point–cloud) method** in Python.
+2. **Accelerate** the grid method using a PyTorch backend (CPU / GPU) and measure the speedup.
+3. Construct the **boundary** of the reachable set via **optimal control problems in Pyomo**.
+4. Plot the two reachable–set approximations on the same figure and compute the **Hausdorff distance** between them.
+5. Study a **non-convex reachable set** using the classical **Li–Markus example** and quantify its deviation from convexity via the distance to its convex hull.
 
-The code is designed to run both locally and in Google Colab.
+The code is structured so that it can be run both locally and in Google Colab (with GPU).
 
 ---
 
-## Mathematical model
+## 1. Mathematical models
 
-We consider a controlled system
-$$
-\dot x(t) = f(x(t), u(t)), \quad x(t) \in \mathbb{R}^2,\ u(t) \in P,\ t \in [0, T],
-$$
-with a fixed initial condition \(x(0) = x_0\).
+### 1.1 Linear system with disk control (convex reachable set)
 
-In this project the dynamics are chosen as a simple linear system with additive control
-$$
+This is the “baseline” system used for most of the comparisons and the Pyomo boundary:
+
+\[
+\dot x(t) = f(x(t), u(t)), \quad x(t) \in \mathbb{R}^2,\ u(t) \in P.
+\]
+
+Dynamics:
+
+\[
 \begin{aligned}
-\dot x_1 &= x_2 + u_1, \\
+\dot x_1 &= x_2 + u_1,\\
 \dot x_2 &= -x_1 + u_2,
 \end{aligned}
-$$
-where \(u = (u_1, u_2)\) is a 2-dimensional control.
+\]
 
-The control set is a disk
-$$
-P = \{ u \in \mathbb{R}^2 : \lVert u \rVert_2 \le u_{\max} \}.
-$$
+with control set
+
+\[
+P = \{u \in \mathbb{R}^2 : \lVert u \rVert_2 \le u_{\max}\}.
+\]
+
+Initial condition:
+
+\[
+x(0) = x_0.
+\]
 
 The reachable set at time \(T\) is
-$$
+
+\[
 \mathcal{R}(T)
-=
-\{ x(T) : x(0) = x_0,\ \dot x = f(x,u),\ u(\cdot) \in \mathcal{U} \}.
-$$
+  = \{x(T) : x(0) = x_0,\ \dot x = f(x,u),\ u(\cdot) \in \mathcal{U}\}.
+\]
 
-In the code we build two numerical approximations:
+Because the system is linear and the control set is convex, \(\mathcal{R}(T)\) is convex for any \(T > 0\).
 
-- \(\mathcal{R}_{\mathrm{grid}}(T)\) — via the grid (point–cloud) method,
-- \(\mathcal{R}_{\mathrm{OC}}(T)\) — via optimal control problems in given directions.
+### 1.2 Li–Markus example (nonlinear in control, non-convex reachable set)
+
+The second model is the classical Li–Markus example, used here to demonstrate non-convex reachable sets:
+
+\[
+\begin{aligned}
+\dot x_1 &= x_2 u_1 - x_1 u_2,\\
+\dot x_2 &= -x_1 u_1 - x_2 u_2,
+\end{aligned}
+\]
+
+with elliptic control set
+
+\[
+u_1^2 + 25 u_2^2 \le 1,
+\]
+
+and initial condition
+
+\[
+x(0) = (1, 0).
+\]
+
+For this system the reachable set in a fixed time interval is generally **non-convex**.  
+In the project, non-convexity is visualised and quantified via the Hausdorff distance between the reachable set and its convex hull.
 
 ---
 
-## Implemented methods
+## 2. Implemented methods
 
-### Grid-based reachable set
+### 2.1 Grid (point-cloud) reachable set
 
-Time is discretised as
-\( 0 = t_0 < t_1 < \dots < t_N = T \)
-with step \(\Delta t = T / N\).
+Time is discretised into \(N\) steps:
+
+\[
+0 = t_0 < t_1 < \dots < t_N = T,\quad \Delta t = T/N.
+\]
+
 The control set \(P\) is approximated by a finite subset
 \(\{u^k\}_{k=1}^M \subset P\) (points on a circle or ellipse).
 
 On each time step \(i\):
 
-1. At step \(i\) we have a cloud of points \(W_i\).
-2. For every \(x \in W_i\) and every control \(u^k\) we compute
-   $$
-   x^{\text{new}} = x + \Delta t\, f(x, u^k)
-   $$
-   using the explicit Euler scheme.
-3. All new points are collected into a cloud \(\widetilde W_{i+1}\).
-4. A thinning procedure is applied to \(\widetilde W_{i+1}\), producing \(W_{i+1}\).
+1. The current point cloud is \(W_i\).
+2. For every \(x \in W_i\) and every discrete control \(u^k\), one step of the explicit Euler scheme is applied:
+   \[
+   x^{\text{new}} = x + \Delta t\, f(x, u^k).
+   \]
+3. All new points are collected into a temporary cloud \(\widetilde{W}_{i+1}\).
+4. A **thinning** procedure is applied to \(\widetilde{W}_{i+1}\), producing a reduced cloud \(W_{i+1}\).
 
-After \(N\) steps, \(W_N\) is taken as an approximation of \(\mathcal{R}_{\mathrm{grid}}(T)\).
+After \(N\) steps, \(W_N\) is taken as a numerical approximation of \(\mathcal{R}(T)\).
 
 Two thinning strategies are implemented:
 
 - **Grid thinning** — a rectangular grid with step \(h\); at most one representative per grid cell.
-- **Poisson disk thinning** — a simple greedy algorithm that enforces a minimum distance \(r\) between any two kept points.
+- **Poisson disk thinning** — a greedy algorithm enforcing a minimum pairwise distance \(r\) between retained points.
 
-The baseline implementation uses NumPy on CPU. An accelerated implementation uses PyTorch and can run on GPU; in the accelerated version both the propagation step and grid thinning are done in pure Torch.
+The baseline implementation uses **NumPy** on CPU.  
+An accelerated backend uses **PyTorch** and can run both the propagation and grid thinning on GPU.
 
-### Boundary via optimal control (Pyomo)
+### 2.2 Pyomo method via directions on a circle / ellipse
 
-For a direction
-\(\ell(\varphi) = (\cos \varphi, \sin \varphi)\)
-we solve the optimal control problem
-$$
-\max_{u(\cdot)} \ \langle \ell(\varphi), x(T) \rangle
-$$
-subject to the system dynamics and the control constraint \(\lVert u(t) \rVert_2 \le u_{\max}\).
+For the linear system, the boundary of the reachable set is constructed in Pyomo by solving a family of optimal control problems along different directions.
 
-The problem is discretised with the same time grid. The decision variables are
-\(x_k \in \mathbb{R}^2\) and \(u_k \in \mathbb{R}^2\) for \(k = 0, \dots, N-1\).  
-The discrete dynamics are
-$$
-x_{k+1} = x_k + \Delta t\, f(x_k, u_k), \quad k = 0, \dots, N-1.
-$$
+For each direction angle \(\varphi\) define
 
-For each direction angle \(\varphi\) we solve this problem in Pyomo and obtain one boundary point \(x_\varphi(T)\). A set of such points for uniformly spaced angles in \([0, 2\pi)\) forms the boundary approximation \(\mathcal{R}_{\mathrm{OC}}(T)\).
+\[
+\ell(\varphi) = (\cos\varphi,\ \sin\varphi).
+\]
 
-In addition, a simpler brute-force variant is implemented: for each direction \(\varphi\) we consider only constant controls \(u(t) \equiv u\) with \(u\) taken from a discrete set on the control circle and choose the one that maximises \(\langle \ell(\varphi), x(T) \rangle\).
+The optimisation problem is
 
-### Hausdorff distance
+\[
+\max_{u(\cdot)}\ \langle \ell(\varphi), x(T) \rangle
+\]
 
-For two finite point clouds \(A, B \subset \mathbb{R}^2\) the (symmetric) Hausdorff distance is
-$$
+subject to
+
+- dynamics \(\dot x = f(x,u)\),
+- control constraint \(\lVert u(t)\rVert_2 \le u_{\max}\),
+- initial condition \(x(0) = x_0\).
+
+The problem is discretised on the same time grid as the grid method:
+
+- decision variables: \(x_k \in \mathbb{R}^2\), \(u_k \in \mathbb{R}^2\) for \(k = 0,\dots,N-1\);
+- dynamics:
+  \[
+  x_{k+1} = x_k + \Delta t\, f(x_k, u_k).
+  \]
+
+For each \(\varphi\) one optimal final point \(x_\varphi(T)\) is obtained; the set \(\{x_\varphi(T)\}\) over a uniform grid of angles approximates the boundary of the reachable set.  
+This is exactly **method 1** in the supervisor’s description: “through a circle/ellipse and a cycle of optimal control problems with linear functionals”.
+
+For the Li–Markus example this method would approximate the **convex hull** of the reachable set (wells/non-convex parts are not seen by support functionals), therefore non-convexity is analysed using the grid method instead.
+
+A simpler Pyomo-free variant is also implemented: “brute force constant controls”. For each direction \(\varphi\), a finite set of constant controls \(u(t)\equiv u\) on a circle/ellipse is tried; the best end point in the direction \(\ell(\varphi)\) is chosen.
+
+### 2.3 Hausdorff distance and convexity analysis
+
+For two finite point clouds \(A, B \subset \mathbb{R}^2\) the symmetric Hausdorff distance is
+
+\[
 d_H(A,B)
-=
-\max\left\{
-\max_{a \in A} \min_{b \in B} \lVert a - b \rVert_2,\,
-\max_{b \in B} \min_{a \in A} \lVert b - a \rVert_2
-\right\}.
-$$
+= \max\Bigl\{
+\max_{a\in A}\min_{b\in B}\lVert a-b\rVert_2,\,
+\max_{b\in B}\min_{a\in A}\lVert b-a\rVert_2
+\Bigr\}.
+\]
 
 The code computes:
 
-- the directed distances \(d(A,B)\) and \(d(B,A)\),
-- the Hausdorff distance \(d_H(A,B)\),
-- one pair of points \((a^\*, b^\*)\) where this distance is attained (approximately).
+- the Hausdorff distance between the grid reachable set and the Pyomo boundary;
+- for the Li–Markus example: the Hausdorff distance between the grid reachable set and its **convex hull** (via `scipy.spatial.ConvexHull`).
 
-Both reachable-set approximations are plotted on one figure, and the Hausdorff distance is visualised as a line segment between \(a^\*\) and \(b^\*\).
-
----
-
-## Project structure
-
-Main modules:
-
-- `system.py`  
-  Definition of the controlled system:
-  - `ControlledSystem` with NumPy dynamics `f_numpy`,
-  - `ControlledSystemTorch` with Torch dynamics `f_torch`.
-
-- `controls.py`  
-  Generation of discrete control sets:
-  - `generate_controls_disk` — points on a circle (disk boundary),
-  - `generate_controls_box` — grid in a rectangle,
-  - `generate_controls_ellipse` — grid on an ellipse.
-
-- `thinning.py`  
-  Point-cloud thinning:
-  - `thin_grid(points, h)` — grid-based thinning in NumPy,
-  - `thin_poisson(points, r)` — Poisson disk-like thinning in NumPy.
-
-- `backend_numpy.py`  
-  Baseline propagation step:
-  - `propagate_numpy(system, states, controls, dt)`.
-
-- `backend_torch.py`  
-  Torch-based propagation and thinning:
-  - `propagate_torch_tensor(system, states_t, controls_t, dt)` — propagation on Torch,
-  - `thin_grid_torch(points_t, h)` — grid thinning on Torch,
-  - `propagate_torch_numpy(...)` — compatibility wrapper (NumPy → Torch → NumPy).
-
-- `grid_reachability.py`  
-  High-level grid-based reachable-set computation:
-  - `ReachabilityConfig` — configuration (final time, number of steps, backend, thinning),
-  - `compute_reachable_set_grid(system, x0, controls, cfg)` — returns a point cloud at time \(T\),
-  - internally selects either NumPy or Torch implementation.
-
-- `ocp_pyomo.py`  
-  Optimal control boundary computation:
-  - `solve_ocp_direction(phi, system, x0, T, num_time_steps, solver_name)` — one direction,
-  - `compute_oc_boundary(system, x0, T, num_time_steps, num_directions, solver_name)` — Pyomo boundary,
-  - `compute_oc_boundary_bruteforce(system, x0, T, num_time_steps, phis, control_candidates)` — brute-force variant with constant controls.
-
-- `hausdorff.py`  
-  Hausdorff distance utilities:
-  - `HausdorffResult` — distance and the corresponding pair of points,
-  - `hausdorff_distance(A, B)` — symmetric Hausdorff distance between two clouds.
-
-- `plotting.py`  
-  Plotting helper:
-  - `plot_reachable_sets(R_grid, R_oc, hd, title, save_path)` — one figure with both sets and the Hausdorff segment.
-
-- `experiment.py`  
-  Main script with experiments:
-  - `run_experiment()`:
-    - builds \(\mathcal{R}_{\mathrm{grid}}(T)\) with NumPy and Torch backends,
-    - computes the Pyomo-based boundary \(\mathcal{R}_{\mathrm{OC}}(T)\),
-    - computes a brute-force constant-control boundary,
-    - evaluates the Hausdorff distances,
-    - produces plots.
-  - `benchmark_reachability_speed()`:
-    - sweeps over `num_controls` and `num_time_steps`,
-    - measures runtime for NumPy vs Torch (GPU),
-    - prints speedup and cloud sizes.
+The distance to the convex hull is used as a **numerical measure of non-convexity**; a qualitative status (“numerically non-convex” vs “approximately convex”) is printed for each time horizon \(T\).
 
 ---
 
-## Installation
+## 3. Project structure and file responsibilities
 
-The project targets Python 3.10+.
+All files are in the project root.
 
-Required Python packages:
+### 3.1 Core dynamics and controls
+
+- **`system.py`**
+
+  - `ControlledSystem`  
+    Linear system with disk control, provides `f_numpy(x, u)` used in the grid method.
+  - `ControlledSystemTorch`  
+    Same dynamics implemented in PyTorch, provides `f_torch(X, U)` for batched propagation on CPU/GPU.
+
+- **`controls.py`**
+
+  - `generate_controls_disk(num_controls, u_max, on_circle)`  
+    Discrete controls uniformly distributed on a circle (boundary of the control disk) or inside the disk.
+  - `generate_controls_box(...)`, `generate_controls_ellipse(...)`  
+    Helpers for rectangular and elliptic control sets (not all variants are used in the final experiment but can be reused).
+
+### 3.2 Thinning and backends
+
+- **`thinning.py`**
+
+  - `thin_grid(points, h)`  
+    NumPy implementation of grid-based thinning: at most one point per grid cell of size \(h\).
+  - `thin_poisson(points, r)`  
+    Simple Poisson disk-like thinning: greedy selection of points at distance at least \(r\) from each other.
+
+- **`backend_numpy.py`**
+
+  - `propagate_numpy(system, states, controls, dt)`  
+    Vectorised explicit Euler step for the grid method. Given a cloud of states and a finite control set, returns the concatenated cloud of all successors.
+
+- **`backend_torch.py`**
+
+  - `propagate_torch_tensor(system, states_t, controls_t, dt)`  
+    Torch version of the propagation step on device tensors.
+  - `thin_grid_torch(points_t, h)`  
+    Grid thinning fully implemented in Torch (no CPU round-trips), suitable for GPU acceleration.
+  - `propagate_torch_numpy(...)`  
+    Backwards-compatible wrapper that accepts NumPy arrays and internally uses Torch.
+
+### 3.3 High-level grid method
+
+- **`grid_reachability.py`**
+
+  - `ReachabilityConfig`  
+    Configuration dataclass:
+    - final time `T`,
+    - number of time steps `num_time_steps`,
+    - backend (`"numpy"` or `"torch"`),
+    - thinning method (`"grid"` or `"poisson"`),
+    - thinning parameter (`h` or `r`),
+    - optional `torch_device` (`"cpu"` or `"cuda"`).
+  - `compute_reachable_set_grid(system, x0, controls, cfg)`  
+    Main function of the grid method:
+    - iterates over time steps,
+    - calls the chosen backend,
+    - applies thinning on each step,
+    - returns the final point cloud at time \(T\).
+
+### 3.4 Pyomo optimal control
+
+- **`ocp_pyomo.py`**
+
+  - `solve_ocp_direction(phi, system, x0, T, num_time_steps, solver_name)`  
+    Builds and solves one optimal control problem in direction \(\ell(\varphi)\) for the linear system.
+  - `compute_oc_boundary(system, x0, T, num_time_steps, num_directions, solver_name)`  
+    Runs a loop over directions and collects the optimal end points into a boundary point set.
+  - `compute_oc_boundary_bruteforce(system, x0, T, num_time_steps, phis, control_candidates)`  
+    Builds an approximate boundary by sweeping constant controls on a circle/ellipse. Used both in the linear system and in the Li–Markus example.
+
+For the Li–Markus system a small class `LiMarkusSystem` with `f_numpy` is defined directly in `experiment.py`, because it is only used in that example.
+
+### 3.5 Hausdorff distance and plotting
+
+- **`hausdorff.py`**
+
+  - `HausdorffResult`  
+    Dataclass storing:
+    - `distance` — Hausdorff distance,
+    - `point_a`, `point_b` — the pair of points where the distance is (approximately) attained.
+  - `hausdorff_distance(A, B)`  
+    Computes symmetric Hausdorff distance between finite point clouds `A` and `B` (NumPy arrays of shape `(N, 2)` and `(M, 2)`).
+
+- **`plotting.py`**
+
+  - `plot_reachable_sets(R_grid, R_oc, hd, title, save_path)`  
+    Plots:
+    - grid reachable set `R_grid`,
+    - boundary `R_oc`,
+    - and the Hausdorff segment between `hd.point_a` and `hd.point_b`.  
+    Used in the linear system experiment.
+
+### 3.6 Main experiments and benchmark
+
+- **`experiment.py`**
+
+  Contains the high-level orchestration and all figures:
+
+  - `run_linear_example()`  
+    Linear system with disk control:
+    - grid reachable set (NumPy, grid thinning),
+    - Poisson thinning (for comparison of densities),
+    - grid reachable set (Torch, grid thinning) with timing and speedup measurement,
+    - Pyomo boundary via optimal control in directions \(\ell(\varphi)\),
+    - boundary via brute-force constant controls,
+    - Hausdorff distance:
+      - between grid set and Pyomo boundary,
+      - between Pyomo and brute-force boundaries,
+    - visualisation on two figures.
+
+  - `run_li_markus_example()`  
+    Li–Markus example:
+    - for several time horizons \(T\) builds the grid reachable set (NumPy backend),
+    - builds an approximate boundary via brute-force constant controls on the elliptic control set,
+    - computes the convex hull of the reachable set and the Hausdorff distance to it,
+    - prints a qualitative convexity status (“degenerate”, “numerically non-convex”, “approximately convex”),
+    - draws figures with:
+      - grid reachable set,
+      - boundary,
+      - convex hull,
+      - Hausdorff segment.
+
+  - `benchmark_reachability_speed()`  
+    Compares runtime of the grid method for NumPy vs Torch (CUDA) on the linear system for several combinations of:
+    - `num_controls`,
+    - `num_time_steps`.  
+    Prints timings, cloud sizes and the measured speedup.
+
+  - `run_experiment()`  
+    Convenience function that runs both `run_linear_example()` and `run_li_markus_example()` in sequence.
+
+---
+
+## 4. Installation
+
+### 4.1 Requirements
+
+Python 3.10+ and the following packages:
 
 - `numpy`
 - `matplotlib`
 - `pyomo`
-- `torch` (PyTorch)
-- `scipy` (optional, used for a KD-tree in the Hausdorff computation)
+- `torch`
+- `scipy`
 
-Install with:
+Install via:
 
 ```bash
 pip install numpy matplotlib pyomo torch scipy
-```
+````
 
-For the Pyomo optimal control problems you also need a nonlinear optimisation solver such as IPOPT. Installation depends on your environment. In Google Colab you can, for example, download prebuilt IPOPT binaries and add them to `PATH` (see the notebook for an example).
-
----
-
-## Usage
-
-### Running locally
-
-Clone the repository and install dependencies:
+For the Pyomo optimal control problems a nonlinear solver is required, e.g. **IPOPT**.
+In Google Colab, prebuilt IPOPT binaries can be downloaded and added to `PATH`; the example notebook typically uses commands like:
 
 ```bash
-git clone https://github.com/<your-username>/<your-repo>.git
-cd <your-repo>
-pip install -r requirements.txt  # if you decide to add one
+!pip install -q pyomo
+# download and unpack ipopt, then ensure the binary is in PATH
 ```
 
-Make sure a Pyomo-compatible solver (e.g. `ipopt`) is available on your `PATH`.
+Adjust this part to your environment.
 
-Then run:
+### 4.2 Running locally
+
+Clone the repository:
+
+```bash
+git clone https://github.com/zv3zdochka/reachable-sets-2d-pyomo-grid-torch.git
+```
+
+Install dependencies (optionally add a `requirements.txt`):
+
+```bash
+pip install -r requirements.txt
+# or install the packages listed above manually
+```
+
+Make sure an NLP solver (e.g. `ipopt`) is available to Pyomo.
+
+Run:
 
 ```bash
 python experiment.py
@@ -231,28 +361,23 @@ python experiment.py
 
 The script will:
 
-* build the reachable set using the grid method (NumPy and Torch backends),
-* solve optimal control problems in multiple directions,
-* compute Hausdorff distances between the different approximations,
-* show two plots:
+1. Run the **linear system experiment**, printing timing and Hausdorff distances and showing two plots (grid vs Pyomo, Pyomo vs brute force).
+2. Run the **Li–Markus experiment**, printing the size of the reachable set, status of convexity and displaying a series of plots for different (T).
 
-  * grid reachable set vs Pyomo boundary,
-  * Pyomo boundary vs brute-force constant-control boundary.
+### 4.3 Running in Google Colab
 
-### Running in Google Colab
-
-A typical Colab workflow:
+Typical Colab workflow:
 
 1. Upload all `*.py` files to the working directory or unzip the project archive.
 
-2. Install dependencies:
+2. Enable GPU (Runtime → Change runtime type → GPU).
+
+3. Install dependencies:
 
    ```python
    !pip install numpy matplotlib pyomo torch scipy
    # plus installation of IPOPT or another solver
    ```
-
-3. Enable GPU in the Colab runtime (Runtime → Change runtime type → GPU).
 
 4. Import and run:
 
@@ -268,14 +393,19 @@ from experiment import benchmark_reachability_speed
 benchmark_reachability_speed()
 ```
 
-This prints NumPy vs Torch timings and speedup for several parameter combinations.
-
 ---
 
-## Notes on acceleration
+## 5. Purpose and expected outcomes
 
-The Torch backend keeps the point cloud as a `torch.Tensor` on the selected device and performs both the propagation step and grid-based thinning on that device. This minimises CPU↔GPU data transfers and allows the method to benefit from GPU parallelism for sufficiently large configurations (number of controls, number of time steps, thinning step).
+The repository is intended as a compact but complete implementation of the assignment:
 
-The function `benchmark_reachability_speed()` can be used to explore parameter ranges where the Torch backend provides a significant speedup over the NumPy baseline.
+* show **two different constructions** of reachable sets (grid method vs optimal control via Pyomo),
+* demonstrate how a **GPU backend** (PyTorch) can significantly accelerate a grid-based method for large configurations,
+* illustrate the **difference between convex and non-convex reachable sets**:
 
----
+  * convex case: linear system with disk control, where Pyomo and grid methods agree;
+  * non-convex case: Li–Markus example, where the grid method and convex hull differ noticeably,
+* quantify the discrepancy between various approximations via the **Hausdorff distance** and visualise it directly on the plots.
+
+This structure can be reused for other planar controlled systems by replacing the dynamics and the control-set generators.
+
