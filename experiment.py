@@ -312,7 +312,7 @@ def run_li_markus_example():
     # Values of T to investigate
     T_list = [0.2, 0.4, 0.6, 0.8, 1.2, 2.0]
     num_time_steps_li = 80
-    thinning_h_li = 0.01      # slightly less aggressive thinning
+    thinning_h_li = 0.01  # slightly less aggressive thinning
     num_directions_li = 64
 
     for T in T_list:
@@ -479,7 +479,6 @@ def run_li_markus_example():
         )
         fig.tight_layout()
         plt.show()
-
 
 
 # ---------------------------------------------------------------------
