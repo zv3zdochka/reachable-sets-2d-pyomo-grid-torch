@@ -411,3 +411,12 @@ At the longer time horizon $T = 2.00$, the reachable set grows significantly and
 
 This example illustrates why optimal control methods based on support functions (which would only recover the convex hull) are insufficient for non-convex reachability analysis, and highlights the necessity of grid-based or level-set approaches for such systems.
 
+### 6.3 Other examples
+
+![Li-Markus reachable set, T=2.00](docs/li_20.png)
+![Li-Markus reachable set, T=2.00](docs/li_40.png)
+![Li-Markus reachable set, T=2.00](docs/li_80.png)
+![Li-Markus reachable set, T=2.00](docs/li_120.png)
+![li_markus_t060.png](docs/linear.png)
+![li_markus_t060.png](docs/linear_border.png)
+
