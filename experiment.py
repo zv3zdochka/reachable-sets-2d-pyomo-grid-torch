@@ -284,15 +284,18 @@ def generate_li_markus_controls(num_controls: int) -> np.ndarray:
 
 def run_li_markus_example():
     """
-    Run the Li–Markus example for several values of T.
+    Li–Markus example:
 
-    For each T we:
-      - compute the reachable set via the grid method (NumPy backend),
-      - compute a boundary via brute-force constant controls (on the ellipse),
-      - compute the Hausdorff distance between the grid reachable set
-        (blue cloud) and the OC boundary (orange curve),
-      - additionally plot the convex hull of the reachable set (for geometry),
-      - produce a plot with clear annotations.
+        x1' = x2*u1 - x1*u2
+        x2' = -x1*u1 - x2*u2
+        u1^2 + 25 u2^2 <= 1,  x(0) = (1, 0).
+
+    Для каждого T считаем:
+      - reachable set сеточным методом (blue),
+      - границу через постоянные управления на эллипсе (orange),
+      - расстояние по Хаусдорфу между blue и orange,
+      - выпуклые оболочки обоих множеств и расстояние по Хаусдорфу между ними,
+      - рисуем оба отрезка: для grid vs OC и для conv(grid) vs conv(OC).
     """
     from scipy.spatial import ConvexHull
 
@@ -312,7 +315,7 @@ def run_li_markus_example():
     # Values of T to investigate
     T_list = [0.2, 0.4, 0.6, 0.8, 1.2, 2.0]
     num_time_steps_li = 80
-    thinning_h_li = 0.01  # slightly less aggressive thinning
+    thinning_h_li = 0.01
     num_directions_li = 64
 
     for T in T_list:
@@ -326,12 +329,12 @@ def run_li_markus_example():
             backend="numpy",
         )
 
-        # Grid-based reachable set (blue cloud)
+        # --- 1) Сеточное множество (blue)
         R_grid_li = compute_reachable_set_grid(system_li, x0_li, controls_li, cfg)
         n_pts = R_grid_li.shape[0]
         print(f"[Li–Markus] Reachable set size (grid) for T = {T:.2f}: {n_pts} points")
 
-        # Boundary via brute-force constant controls on the ellipse (orange curve)
+        # --- 2) Граница через постоянные управления на эллипсе (orange)
         phis = np.linspace(0.0, 2.0 * np.pi, num_directions_li, endpoint=False)
         R_oc_li = compute_oc_boundary_bruteforce(
             system=system_li,
@@ -344,20 +347,34 @@ def run_li_markus_example():
         print(f"[Li–Markus] OC boundary (constant controls on ellipse) has "
               f"{R_oc_li.shape[0]} points.")
 
-        # --- 1) Hausdorff distance между синим и оранжевым ---
+        # --- 3) Хаусдорф между blue и orange ---
         hd_grid_oc = hausdorff_distance(R_grid_li, R_oc_li)
         print("[Li–Markus] Hausdorff distance between grid reachable set (blue) "
               f"and OC boundary (orange): d_H = {hd_grid_oc.distance:.3f}")
 
-        # --- 2) Дополнительно: выпуклая оболочка синего множества (для геометрии) ---
-        hull_points = None
+        # --- 4) Выпуклые оболочки и Хаусдорф между ними ---
+        hd_hulls = None
+        hull_grid_pts = None
+        hull_oc_pts = None
+
         if n_pts >= 3:
-            hull = ConvexHull(R_grid_li)
-            hull_points = R_grid_li[hull.vertices]
+            hull_grid = ConvexHull(R_grid_li)
+            hull_grid_pts = R_grid_li[hull_grid.vertices]
 
-        # ----- Рисуем -----
+        if R_oc_li.shape[0] >= 3:
+            hull_oc = ConvexHull(R_oc_li)
+            hull_oc_pts = R_oc_li[hull_oc.vertices]
 
-        # Degenerate case: very few points, нет смысла обсуждать форму
+        if hull_grid_pts is not None and hull_oc_pts is not None:
+            hd_hulls = hausdorff_distance(hull_grid_pts, hull_oc_pts)
+            print("[Li–Markus] Hausdorff distance between convex hulls "
+                  f"conv(grid) and conv(OC): d_H = {hd_hulls.distance:.3f}")
+        else:
+            print("[Li–Markus] Not enough points to build convex hulls for both sets.")
+
+        # ===== РИСОВАНИЕ =====
+
+        # Дегенератный случай (очень мало точек)
         if n_pts < 3:
             status = "degenerate (almost a single point)"
 
@@ -381,7 +398,7 @@ def run_li_markus_example():
                 label="Boundary (constant controls on ellipse)",
             )
 
-            # Hausdorff segment (blue vs orange)
+            # Отрезок Hausdorff grid vs OC
             pa = hd_grid_oc.point_a
             pb = hd_grid_oc.point_b
             ax.scatter([pa[0]], [pa[1]], color="red", s=60, label="Hausdorff point A")
@@ -393,6 +410,11 @@ def run_li_markus_example():
                 color="black",
                 label=f"Hausdorff segment (grid vs OC, d={hd_grid_oc.distance:.3f})",
             )
+
+            # Если есть расстояние между оболочками — просто подпишем его
+            if hd_hulls is not None:
+                ax.plot([], [], " ",
+                        label=f"d_H(conv(grid), conv(OC)) = {hd_hulls.distance:.3f}")
 
             ax.set_title(
                 f"Li–Markus reachable set, T = {T:.2f}\n"
@@ -412,8 +434,7 @@ def run_li_markus_example():
             plt.show()
             continue
 
-        # Нормальный случай: есть полноценное облако точек
-        # (статус по-прежнему будем называть "numerically non-convex", т.к. видна выемка)
+        # Обычный (невыпуклый) случай
         status = "numerically non-convex"
 
         fig, ax = plt.subplots(figsize=(6.5, 6.5))
@@ -428,7 +449,7 @@ def run_li_markus_example():
             label="Grid reachable set (Li–Markus)",
         )
 
-        # Orange boundary (constant controls)
+        # Orange boundary
         R_oc_closed = np.vstack([R_oc_li, R_oc_li[0]])
         ax.plot(
             R_oc_closed[:, 0],
@@ -438,19 +459,31 @@ def run_li_markus_example():
             label="Boundary (constant controls on ellipse)",
         )
 
-        # Black dashed convex hull (geometric reference only)
-        if hull_points is not None:
-            hull_closed = np.vstack([hull_points, hull_points[0]])
+        # Convex hull of grid set (чёрный пунктир)
+        if hull_grid_pts is not None:
+            hull_grid_closed = np.vstack([hull_grid_pts, hull_grid_pts[0]])
             ax.plot(
-                hull_closed[:, 0],
-                hull_closed[:, 1],
+                hull_grid_closed[:, 0],
+                hull_grid_closed[:, 1],
                 lw=1.8,
                 linestyle="--",
                 color="black",
-                label="Convex hull of reachable set",
+                label="Convex hull of grid set",
             )
 
-        # Hausdorff segment: blue vs orange
+        # Convex hull of OC boundary (зелёный пунктир)
+        if hull_oc_pts is not None:
+            hull_oc_closed = np.vstack([hull_oc_pts, hull_oc_pts[0]])
+            ax.plot(
+                hull_oc_closed[:, 0],
+                hull_oc_closed[:, 1],
+                lw=1.5,
+                linestyle="--",
+                color="tab:green",
+                label="Convex hull of OC boundary",
+            )
+
+        # Отрезок Hausdorff grid vs OC
         pa = hd_grid_oc.point_a
         pb = hd_grid_oc.point_b
         ax.scatter([pa[0]], [pa[1]], color="red", s=60, label="Hausdorff point A")
@@ -462,6 +495,28 @@ def run_li_markus_example():
             color="black",
             label=f"Hausdorff segment (grid vs OC, d={hd_grid_oc.distance:.3f})",
         )
+
+        # Отрезок Hausdorff между оболочками (если удалось посчитать)
+        if hd_hulls is not None:
+            pa_h = hd_hulls.point_a
+            pb_h = hd_hulls.point_b
+            ax.scatter(
+                [pa_h[0]], [pa_h[1]],
+                color="magenta", s=60, marker="^",
+                label="Hull Hausdorff point A",
+            )
+            ax.scatter(
+                [pb_h[0]], [pb_h[1]],
+                color="lime", s=60, marker="v",
+                label="Hull Hausdorff point B",
+            )
+            ax.plot(
+                [pa_h[0], pb_h[0]],
+                [pa_h[1], pb_h[1]],
+                linestyle="-.",
+                color="purple",
+                label=f"Hausdorff segment hulls (d={hd_hulls.distance:.3f})",
+            )
 
         ax.set_title(
             f"Li–Markus reachable set, T = {T:.2f}\n"
@@ -479,6 +534,7 @@ def run_li_markus_example():
         )
         fig.tight_layout()
         plt.show()
+
 
 
 # ---------------------------------------------------------------------
